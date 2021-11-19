@@ -1,7 +1,7 @@
 import threading
 from queue import Queue
 
-from multiproc_approach.abstractions import AbstractMessageProcessor
+from app.abstractions import AbstractMessageProcessor
 from helpers import LoggerMixin, get_pid_number
 
 

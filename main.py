@@ -1,6 +1,6 @@
 import time
 
-from multiproc_approach import App
+from app import App
 
 
 TEST_TIME = 60 * 5

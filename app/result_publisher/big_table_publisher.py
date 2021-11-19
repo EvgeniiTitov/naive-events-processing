@@ -1,6 +1,6 @@
 import typing as t
 
-from multiproc_approach.abstractions import (
+from app.abstractions import (
     AbstractResultPiblisher,
     processing_result,
 )

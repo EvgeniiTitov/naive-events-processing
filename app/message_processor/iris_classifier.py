@@ -2,7 +2,7 @@ import pickle
 import typing as t
 
 from helpers import get_pid_number, LoggerMixin
-from multiproc_approach.abstractions import (
+from app.abstractions import (
     AbstractMessageProcessor,
     message,
     processing_result,

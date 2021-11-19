@@ -3,7 +3,7 @@ import typing as t
 
 from google.cloud import pubsub_v1
 
-from multiproc_approach.abstractions import AbstractMessageConsumer, message
+from app.abstractions import AbstractMessageConsumer, message
 from helpers import LoggerMixin, get_pid_number
 from config import Config
 

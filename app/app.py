@@ -1,14 +1,14 @@
 import typing as t
 from queue import Queue
 
-from multiproc_approach.workers import (
+from app.workers import (
     MessageConsumerWorker,
     MessageProcessorWorker,
     ResultPublisherWorker,
 )
-from multiproc_approach.pubsub_consumer import MessageConsumer
-from multiproc_approach.message_processor import IrisClassifier
-from multiproc_approach.result_publisher import BigTablePublisher
+from app.pubsub_consumer import MessageConsumer
+from app.message_processor import IrisClassifier
+from app.result_publisher import BigTablePublisher
 from helpers import LoggerMixin, get_pid_number
 from config import Config
 
@@ -69,7 +69,7 @@ class App(LoggerMixin):
     def get_number_of_processed_messages(self) -> int:
         return self._publisher_thread._messages_processed
 
-    def report_queue_sizes(self) -> t.MutableMapping:
+    def report_queue_sizes(self) -> t.MutableMapping[str, int]:
         return {
             "consumer_to_processor": self._q_consumer_proc.qsize(),
             "processor_to_publisher": self._q_proc_publisher.qsize(),

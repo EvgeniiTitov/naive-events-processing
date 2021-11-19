@@ -1,7 +1,7 @@
 import threading
 from queue import Queue
 
-from multiproc_approach.abstractions import AbstractResultPiblisher
+from app.abstractions import AbstractResultPiblisher
 from helpers import LoggerMixin, get_pid_number
 
 
