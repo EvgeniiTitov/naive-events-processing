@@ -6,13 +6,12 @@ from helpers import LoggerMixin, get_pid_number
 
 
 class ResultPublisherWorker(threading.Thread, LoggerMixin):
-
     def __init__(
         self,
         queue_in: Queue,
         result_publisher: AbstractResultPiblisher,
         *args,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in = queue_in

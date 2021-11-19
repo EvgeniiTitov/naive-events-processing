@@ -4,7 +4,7 @@ from queue import Queue
 from multiproc_approach.workers import (
     MessageConsumerWorker,
     MessageProcessorWorker,
-    ResultPublisherWorker
+    ResultPublisherWorker,
 )
 from multiproc_approach.pubsub_consumer import MessageConsumer
 from multiproc_approach.message_processor import IrisClassifier
@@ -14,14 +14,17 @@ from config import Config
 
 
 class App(LoggerMixin):
-
     def __init__(self) -> None:
         self._pid = get_pid_number()
 
         # Initialize queues connecting workers
-        self._q_to_consumer = Queue(1)
-        self._q_consumer_proc = Queue(Config.Q_SIZE_CONSUMER_TO_PROCESSOR)
-        self._q_proc_publisher = Queue(Config.Q_SIZE_PROCESSOR_TO_PUBLISHER)
+        self._q_to_consumer: "Queue[str]" = Queue(1)
+        self._q_consumer_proc: "Queue[t.Any]" = Queue(
+            Config.Q_SIZE_CONSUMER_TO_PROCESSOR
+        )
+        self._q_proc_publisher: "Queue[t.Any]" = Queue(
+            Config.Q_SIZE_PROCESSOR_TO_PUBLISHER
+        )
         self.logger.info("Queues initialized")
 
         # Initialize classes operated by workers
@@ -34,22 +37,22 @@ class App(LoggerMixin):
         self._consumer_thread = MessageConsumerWorker(
             queue_in=self._q_to_consumer,
             queue_out=self._q_consumer_proc,
-            consumer=self._pubsub_consumer
+            consumer=self._pubsub_consumer,
         )
         self._threads.append(self._consumer_thread)
 
         self._processor_thread = MessageProcessorWorker(
             queue_in=self._q_consumer_proc,
             queue_out=self._q_proc_publisher,
-            classifier=self._model
+            classifier=self._model,
         )
-        self._threads.append(self._processor_thread)
+        self._threads.append(self._processor_thread)  # type: ignore
 
         self._publisher_thread = ResultPublisherWorker(
             queue_in=self._q_proc_publisher,
-            result_publisher=self._res_publisher
+            result_publisher=self._res_publisher,
         )
-        self._threads.append(self._publisher_thread)
+        self._threads.append(self._publisher_thread)  # type: ignore
         self.logger.info(f"PID: {self._pid} - Application inited")
 
     def start(self) -> None:
@@ -69,5 +72,5 @@ class App(LoggerMixin):
     def report_queue_sizes(self) -> t.MutableMapping:
         return {
             "consumer_to_processor": self._q_consumer_proc.qsize(),
-            "processor_to_publisher": self._q_proc_publisher.qsize()
+            "processor_to_publisher": self._q_proc_publisher.qsize(),
         }

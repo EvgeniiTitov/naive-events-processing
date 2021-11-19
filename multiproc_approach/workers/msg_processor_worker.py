@@ -6,14 +6,13 @@ from helpers import LoggerMixin, get_pid_number
 
 
 class MessageProcessorWorker(threading.Thread, LoggerMixin):
-
     def __init__(
         self,
         queue_in: Queue,
         queue_out: Queue,
         classifier: AbstractMessageProcessor,
         *args,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._queue_in = queue_in
