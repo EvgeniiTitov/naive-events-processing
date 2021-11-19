@@ -1,0 +1,6 @@
+class Config:
+    Q_SIZE_CONSUMER_TO_PROCESSOR = 50
+    Q_SIZE_PROCESSOR_TO_PUBLISHER = 50
+    PROJECT_ID = ""
+    SUB_ID = ""
+    NUM_MESSAGES = 3
