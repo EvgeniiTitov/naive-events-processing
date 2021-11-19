@@ -1,8 +1,13 @@
+import queue
+import typing as t
 import threading
 from queue import Queue
 
-from app.abstractions import AbstractMessageConsumer
+from app.abstractions import AbstractMessageConsumer, message
 from helpers import LoggerMixin, get_pid_number
+
+
+response = t.List[t.Optional[message]]
 
 
 class MessageConsumerWorker(threading.Thread, LoggerMixin):
@@ -23,14 +28,17 @@ class MessageConsumerWorker(threading.Thread, LoggerMixin):
 
     def run(self) -> None:
         while True:
-            payload = self._queue_in.get()
-            if "STOP" in payload:
-                self._queue_out.put("STOP")
-                break
-
-            # TODO: This must be blocking
             try:
-                messages = self._consumer.get_messages()
+                payload = self._queue_in.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                if "STOP" in payload:
+                    self._queue_out.put("STOP")
+                    break
+
+            try:
+                messages: response = self._consumer.get_messages()
             except Exception as e:
                 self.logger.exception(
                     f"PID: {self._pid} - Failed while receiving messages "
@@ -39,10 +47,6 @@ class MessageConsumerWorker(threading.Thread, LoggerMixin):
                 continue
 
             if not len(messages):
-                self.logger.info(
-                    f"PID: {self._pid} - MessageConsumerWorker received "
-                    f"0 messages"
-                )
                 continue
 
             self.logger.info(

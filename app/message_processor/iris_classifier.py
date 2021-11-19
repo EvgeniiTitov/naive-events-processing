@@ -28,9 +28,14 @@ class IrisClassifier(AbstractMessageProcessor, LoggerMixin):
     def process_messages(
         self, msg: t.List[message]
     ) -> t.List[processing_result]:
-        # TODO: For a normal model data needs to be preprocessed
+        crns, batch = [], []
+        for message in msg:
+            crns.append(message["crn"])
+            batch.append(message["features"])
 
-        predictions = self._model.predict(msg)
+        prediction_indices = self._model.predict(batch)
 
-        # TODO: Predictions must potentially be postprocessed
-        return [IrisClassifier.CLASSES[index] for index in predictions]
+        out = []
+        for crn, features, index in zip(crns, batch, prediction_indices):
+            out.append([crn, features, IrisClassifier.CLASSES[index]])
+        return out

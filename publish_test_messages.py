@@ -1,10 +1,7 @@
 from google.cloud import pubsub_v1
 
+from config import Config
 
-PROJECT_ID = "gcp-wow-rwds-ai-mlchapter-dev"
-TOPIC_ID = (
-    "projects/gcp-wow-rwds-ai-mlchapter-dev/topics/etitov-poc-sample-topic"
-)
 
 samples = [
     [5.1, 3.5, 1.4, 0.2],
@@ -18,14 +15,15 @@ samples = [
 
 def main():
     publisher = pubsub_v1.PublisherClient()
-    topic_path = publisher.topic_path(PROJECT_ID, TOPIC_ID)
+    topic_path = publisher.topic_path(Config.PROJECT_ID, Config.TOPIC_ID)
     print("Initialized")
 
-    for i in range(5):
+    for i in range(4):
         message = {"crn": i, "features": samples[i % len(samples)]}
         message_encoded = str(message).encode("utf-8")
-        publisher.publish(topic_path, message_encoded)
+        future = publisher.publish(topic_path, message_encoded)
         print("Published message:", message_encoded)
+        print(future.result())
 
 
 if __name__ == "__main__":

@@ -4,13 +4,13 @@ import typing as t
 from google.cloud import pubsub_v1
 
 
-message = t.Union[pubsub_v1.subscriber.message.Message, str]
+message = t.Union[pubsub_v1.subscriber.message.Message, str, dict]
 processing_result = t.Any
 
 
 class AbstractMessageConsumer(abc.ABC):
     @abc.abstractmethod
-    def get_messages(self) -> t.List[message]:
+    def get_messages(self) -> t.List[t.Optional[message]]:
         ...
 
 

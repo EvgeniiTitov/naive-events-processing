@@ -11,4 +11,4 @@ class BigTablePublisher(AbstractResultPiblisher):
         pass
 
     def publish_result(self, res: t.List[processing_result]) -> None:
-        pass
+        print("\n\nRESULT TO PUBLISH:", res)
