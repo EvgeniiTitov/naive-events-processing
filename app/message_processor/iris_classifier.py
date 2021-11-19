@@ -1,3 +1,4 @@
+import os
 import pickle
 import typing as t
 
@@ -13,7 +14,14 @@ class IrisClassifier(AbstractMessageProcessor, LoggerMixin):
     CLASSES = ["setosa", "versicolor", "virginica"]
 
     def __init__(self) -> None:
-        self._model = pickle.load(open("weights/iris_classifier.pkl", "rb"))
+        self._model = pickle.load(
+            open(
+                os.path.join(
+                    os.path.dirname(__file__), "weights/iris_classifier.pkl"
+                ),
+                "rb",
+            )
+        )
         self._pid = get_pid_number()
         self.logger.info(f"IrisClassifier loaded in PID: {self._pid}")
 

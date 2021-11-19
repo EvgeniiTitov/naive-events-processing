@@ -2,6 +2,7 @@ import time
 import multiprocessing
 
 from app import App
+from helpers import get_pid_number
 
 
 CPU_COUNT = multiprocessing.cpu_count()
@@ -17,6 +18,7 @@ def run_application(test_time: int) -> None:
         if i % 10 == 0:
             queue_sizes.append(app.report_queue_sizes())
     app.stop()
+    print(f"\n\nProcess's {get_pid_number()} queue sizes {queue_sizes}")
 
 
 def main() -> int:
