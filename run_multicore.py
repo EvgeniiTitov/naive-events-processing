@@ -1,40 +1,39 @@
 import time
 import multiprocessing
+from functools import partial
 
 from app import App
-from app.helpers import get_pid_number
 
 
-CPU_COUNT = multiprocessing.cpu_count()
-TEST_TIME = 60 * 5
+CPU_COUNT = 4  # multiprocessing.cpu_count()
+TEST_TIME = 60 * 1
 
 
-def run_application(test_time: int) -> None:
+def run_application(index: int, test_time: int) -> int:
+    print("Starting application:", index)
     app = App()
     app.start()
-    queue_sizes = []
+    # queue_sizes = []
     for i in range(test_time):
         time.sleep(1)
         if i % 10 == 0:
-            queue_sizes.append(app.report_queue_sizes())
+            # queue_sizes.append(app.report_queue_sizes())
+            pass
     app.stop()
-    print(f"\n\nProcess's {get_pid_number()} queue sizes {queue_sizes}")
+    return app.processed_messages
 
 
 def main() -> int:
-    processes = []
-    for i in range(CPU_COUNT):
-        process = multiprocessing.Process(
-            target=lambda: run_application(TEST_TIME)
+    with multiprocessing.Pool(CPU_COUNT) as pool:
+        results = pool.map(
+            func=partial(run_application, test_time=TEST_TIME),
+            iterable=range(CPU_COUNT),
         )
-        process.start()
-        processes.append(process)
-    print(f"Spawned {CPU_COUNT} processes")
 
-    for process in processes:
-        process.join()
-
-    print("Done - all processes finished")
+    print(
+        f"{CPU_COUNT} apps processed {sum(results)} messages "
+        f"in {TEST_TIME} seconds"
+    )
     return 0
 
 

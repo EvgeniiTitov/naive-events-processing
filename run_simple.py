@@ -19,9 +19,11 @@ def main() -> int:
         pass
     app.stop()
 
-    print(f"\n\nProcessed {app.processed_messages} messages in "
-          f"{TEST_TIME} seconds")
-    #print("QUEUE SIZES:", queue_sizes)
+    print(
+        f"\n\nProcessed {app.processed_messages} messages in "
+        f"{TEST_TIME} seconds"
+    )
+    # print("QUEUE SIZES:", queue_sizes)
     return 0
 
 

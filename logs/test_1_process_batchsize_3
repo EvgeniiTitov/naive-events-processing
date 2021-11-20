@@ -1,3 +1,5 @@
+QUEUE SIZES = 50
+
 (venv) NSUR01MAC162:msg-processing-poc 1213669$ python run_simple.py
 '2021-11-20T15:34:48+1100 684 INFO - app.py:33 -- Queues initialized'
 '2021-11-20T15:34:48+1100 688 INFO - consumer.py:26 -- PID: 22945 - PubSubMessageConsumer initialized'

@@ -7,7 +7,7 @@ class Config:
 
     CONSUME_TOPIC_ID = "etitov-poc-sample-topic"
     CONSUME_SUBSCRIPTION_ID = "etitov-poc-sample-topic-sub"
-    CONSUME_NUM_MESSAGES = 3
+    CONSUME_NUM_MESSAGES = 1
 
     # For message_processor.pubsub
     PUBLISH_TOPIC_ID = "etitov-poc-sample-topic-output"

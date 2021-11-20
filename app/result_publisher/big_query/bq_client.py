@@ -9,7 +9,6 @@ from config import Config
 
 
 class BigQueryMessagePublisher(AbsResultPiblisher, LoggerMixin):
-
     def __init__(self) -> None:
         self._my_name = self.__class__.__name__
         self._pid = get_pid_number()
@@ -24,7 +23,7 @@ class BigQueryMessagePublisher(AbsResultPiblisher, LoggerMixin):
             {
                 "crn": result[0],
                 "prediction": result[-1],
-                "features": str(result[1])
+                "features": str(result[1]),
             }
             for result in res
         ]
