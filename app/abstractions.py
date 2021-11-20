@@ -1,28 +1,26 @@
 import abc
 import typing as t
 
-from google.cloud import pubsub_v1
 
-
-message = t.Union[pubsub_v1.subscriber.message.Message, str, dict]
+message = t.Union[str, dict]
 processing_result = t.Any
 
 
-class AbstractMessageConsumer(abc.ABC):
+class AbsMessageConsumer(abc.ABC):
     @abc.abstractmethod
     def get_messages(self) -> t.List[t.Optional[message]]:
         ...
 
 
-class AbstractMessageProcessor(abc.ABC):
+class AbsMessageProcessor(abc.ABC):
     @abc.abstractmethod
     def process_messages(
-        self, msg: t.List[message]
+        self, messages: t.List[message]
     ) -> t.List[processing_result]:
         ...
 
 
-class AbstractResultPiblisher(abc.ABC):
+class AbsResultPiblisher(abc.ABC):
     @abc.abstractmethod
     def publish_result(self, res: t.List[processing_result]) -> None:
         ...

@@ -1,0 +1,1 @@
+from app.message_consumer.pubsub import PubSubMessageConsumer

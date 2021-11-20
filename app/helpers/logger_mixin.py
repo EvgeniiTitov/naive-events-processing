@@ -1,12 +1,14 @@
 import logging
 import sys
 
+from config import Config
+
 
 logging.basicConfig(
-    format="'%(asctime)s %(msecs)03d %(levelname)s %(module)s "
+    format="'%(asctime)s %(msecs)03d %(levelname)s "
     "- %(filename)s:%(lineno)d -- %(message)s'",
     stream=sys.stdout,
-    level=logging.INFO,
+    level=logging.DEBUG if Config.DEBUG else logging.INFO,
     datefmt="%Y-%m-%dT%H:%M:%S%z",
 )
 

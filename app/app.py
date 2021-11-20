@@ -6,16 +6,17 @@ from app.workers import (
     MessageProcessorWorker,
     ResultPublisherWorker,
 )
-from app.pubsub_consumer import MessageConsumer
+from app.message_consumer import PubSubMessageConsumer
 from app.message_processor import IrisClassifier
-from app.result_publisher import BigTablePublisher
-from helpers import LoggerMixin, get_pid_number
+from app.result_publisher import BigTablePublisher, PubSubMessagePublisher
+from app.helpers import LoggerMixin, get_pid_number
 from config import Config
 
 
 class App(LoggerMixin):
     def __init__(self) -> None:
         self._pid = get_pid_number()
+        self._my_name = self.__class__.__name__
 
         # Initialize queues connecting workers
         self._q_to_consumer: "Queue[str]" = Queue(1)
@@ -27,10 +28,11 @@ class App(LoggerMixin):
         )
         self.logger.info("Queues initialized")
 
-        # Initialize classes operated by workers
-        self._pubsub_consumer = MessageConsumer()
+        # Initialize classes operated by the workers
+        self._pubsub_consumer = PubSubMessageConsumer()
         self._model = IrisClassifier()
-        self._res_publisher = BigTablePublisher()
+        # self._res_publisher = BigTablePublisher()
+        self._res_publisher = PubSubMessagePublisher()
 
         # Initialize workers (threads) doing actual work
         self._threads = []
@@ -53,21 +55,21 @@ class App(LoggerMixin):
             result_publisher=self._res_publisher,
         )
         self._threads.append(self._publisher_thread)  # type: ignore
-        self.logger.info(f"PID: {self._pid} - Application inited")
+        self.logger.info(f"PID: {self._pid} - {self._my_name} inited")
 
     def start(self) -> None:
         for thread in self._threads:
             thread.start()
-        self.logger.info(f"PID: {self._pid} - Application started")
+        self.logger.info(f"PID: {self._pid} - {self._my_name} started")
 
     def stop(self) -> None:
         self._q_to_consumer.put("STOP")
         for thread in self._threads:
             thread.join()
-        self.logger.info(f"PID: {self._pid} - Application stopped")
+        self.logger.info(f"PID: {self._pid} - {self._my_name} stopped")
 
     def get_number_of_processed_messages(self) -> int:
-        return self._publisher_thread._messages_processed
+        return self._publisher_thread.messages_processed
 
     def report_queue_sizes(self) -> t.MutableMapping[str, int]:
         return {

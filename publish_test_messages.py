@@ -15,10 +15,12 @@ samples = [
 
 def main():
     publisher = pubsub_v1.PublisherClient()
-    topic_path = publisher.topic_path(Config.PROJECT_ID, Config.TOPIC_ID)
+    topic_path = publisher.topic_path(
+        Config.PROJECT_ID, Config.CONSUME_TOPIC_ID
+    )
     print("Initialized")
 
-    for i in range(4):
+    for i in range(10):
         message = {"crn": i, "features": samples[i % len(samples)]}
         message_encoded = str(message).encode("utf-8")
         future = publisher.publish(topic_path, message_encoded)

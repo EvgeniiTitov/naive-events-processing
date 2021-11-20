@@ -1,12 +1,12 @@
 import typing as t
 
 from app.abstractions import (
-    AbstractResultPiblisher,
+    AbsResultPiblisher,
     processing_result,
 )
 
 
-class BigTablePublisher(AbstractResultPiblisher):
+class BigTablePublisher(AbsResultPiblisher):
     def __init__(self) -> None:
         pass
 

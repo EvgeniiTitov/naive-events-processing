@@ -2,7 +2,7 @@ import time
 import multiprocessing
 
 from app import App
-from helpers import get_pid_number
+from app.helpers import get_pid_number
 
 
 CPU_COUNT = multiprocessing.cpu_count()

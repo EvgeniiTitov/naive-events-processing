@@ -3,19 +3,24 @@ import typing as t
 import threading
 from queue import Queue
 
-from app.abstractions import AbstractMessageConsumer, message
-from helpers import LoggerMixin, get_pid_number
+from app.abstractions import AbsMessageConsumer, message
+from app.helpers import LoggerMixin, get_pid_number
 
 
 response = t.List[t.Optional[message]]
 
 
 class MessageConsumerWorker(threading.Thread, LoggerMixin):
+    """
+    The worker can use any Consumer as long as the provided consumer implements
+    the appropriate interface.
+    """
+
     def __init__(
         self,
         queue_in: Queue,
         queue_out: Queue,
-        consumer: AbstractMessageConsumer,
+        consumer: AbsMessageConsumer,
         *args,
         **kwargs,
     ) -> None:
@@ -24,7 +29,8 @@ class MessageConsumerWorker(threading.Thread, LoggerMixin):
         self._queue_out = queue_out
         self._consumer = consumer
         self._pid = get_pid_number()
-        self.logger.info(f"PID: {self._pid} - MessageConsumerWorker inited")
+        self._my_name = self.__class__.__name__
+        self.logger.info(f"PID: {self._pid} - {self._my_name} inited")
 
     def run(self) -> None:
         while True:
@@ -41,19 +47,20 @@ class MessageConsumerWorker(threading.Thread, LoggerMixin):
                 messages: response = self._consumer.get_messages()
             except Exception as e:
                 self.logger.exception(
-                    f"PID: {self._pid} - Failed while receiving messages "
-                    f"Error: {e}"
+                    f"PID: {self._pid} - {self._my_name} failed while "
+                    f"receiving messages Error: {e}"
                 )
                 continue
 
+            # Consumer can timeout returning no messages
             if not len(messages):
                 continue
 
-            self.logger.info(
-                f"PID: {self._pid} - MessageConsumerWorker received "
+            self.logger.debug(
+                f"PID: {self._pid} - {self._my_name} received "
                 f"{len(messages)} messages. Sending further"
             )
             self._queue_out.put(messages)
 
         # TODO: Consider explicitly deleting the consumer
-        self.logger.info(f"PID: {self._pid} - MessageConsumerWorker stopped")
+        self.logger.info(f"PID: {self._pid} - {self._my_name} stopped")

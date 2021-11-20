@@ -2,15 +2,15 @@ import os
 import pickle
 import typing as t
 
-from helpers import get_pid_number, LoggerMixin
+from app.helpers import get_pid_number, LoggerMixin
 from app.abstractions import (
-    AbstractMessageProcessor,
+    AbsMessageProcessor,
     message,
     processing_result,
 )
 
 
-class IrisClassifier(AbstractMessageProcessor, LoggerMixin):
+class IrisClassifier(AbsMessageProcessor, LoggerMixin):
     CLASSES = ["setosa", "versicolor", "virginica"]
 
     def __init__(self) -> None:
@@ -23,13 +23,18 @@ class IrisClassifier(AbstractMessageProcessor, LoggerMixin):
             )
         )
         self._pid = get_pid_number()
-        self.logger.info(f"IrisClassifier loaded in PID: {self._pid}")
+        self.logger.info(
+            f"PID: {self._pid} - {self.__class__.__name__} loaded"
+        )
 
     def process_messages(
-        self, msg: t.List[message]
+        self, messages: t.List[message]
     ) -> t.List[processing_result]:
+        if not len(messages):
+            return []
+
         crns, batch = [], []
-        for message in msg:
+        for message in messages:
             crns.append(message["crn"])
             batch.append(message["features"])
 

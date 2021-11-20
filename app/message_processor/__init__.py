@@ -1,1 +1,1 @@
-from .iris_classifier import IrisClassifier
+from app.message_processor.iris_classifier import IrisClassifier
