@@ -3,8 +3,11 @@ trying out proper technologies for events processing.
 
  
 Events processing Application has 3 major parts:
+
 1) Message consumer - could be anything as long as it implements the appropriate interface. For now its PubSub
+
 2) Message processor - could be any model as long as it implements the appropriate interface. For testing purposes the IRIS classifier is used
+
 3) Results publisher - could be anything as long as it implements the appopriate interface. Currently implemented: BigQuery, PubSub, BigTable (pending permissions)
 
 Each part runs by a dedicated worker (thread). Workers are connected by queues, which allows them to exchange information.
