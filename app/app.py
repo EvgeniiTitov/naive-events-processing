@@ -74,7 +74,8 @@ class App(LoggerMixin):
             thread.join()
         self.logger.info(f"PID: {self._pid} - {self._my_name} stopped")
 
-    def get_number_of_processed_messages(self) -> int:
+    @property
+    def processed_messages(self) -> int:
         return self._publisher_thread.messages_processed
 
     def report_queue_sizes(self) -> t.MutableMapping[str, int]:

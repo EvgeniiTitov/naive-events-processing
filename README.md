@@ -25,6 +25,7 @@ For scaling purposes more than one instance of the Application could be run usin
 - Load testing (messages per minute simple and multicore)
 - Multiprocessing test
 - Consider adding some feature enrichment step from BigTable
+- Measure queue sizes, it seems reaind messages is quick, scoring is obviously slower, so its a bottleneck
 
 *TO THINK*:
 - If one worker fails, how do I kill the other ones? Some channel to pass the

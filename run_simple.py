@@ -3,7 +3,7 @@ import time
 from app import App
 
 
-TEST_TIME = 60 * 5
+TEST_TIME = 60 * 1
 
 
 def main() -> int:
@@ -19,7 +19,9 @@ def main() -> int:
         pass
     app.stop()
 
-    print("\n\nQUEUE SIZES:", queue_sizes)
+    print(f"\n\nProcessed {app.processed_messages} messages in "
+          f"{TEST_TIME} seconds")
+    #print("QUEUE SIZES:", queue_sizes)
     return 0
 
 
