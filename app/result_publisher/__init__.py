@@ -1,2 +1,3 @@
 from app.result_publisher.big_table import BigTablePublisher
 from app.result_publisher.pubsub import PubSubMessagePublisher
+from app.result_publisher.big_query import BigQueryMessagePublisher

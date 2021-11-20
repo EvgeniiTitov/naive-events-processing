@@ -34,7 +34,12 @@ class PubSubMessageConsumer(AbsMessageConsumer, LoggerMixin):
         )
         # The subscriber will time out and return nothing if there are no msg
         if not response:
+            self.logger.debug(
+                f"PID: {self._pid} - {self._my_name} timed out, no "
+                f"messages received"
+            )
             return []
+
         ack_ids, messages = [], []
         for message in response.received_messages:
             ack_ids.append(message.ack_id)

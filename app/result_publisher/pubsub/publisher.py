@@ -15,15 +15,13 @@ NUM_MESSAGES = os.environ.get("NUM_MESSAGES") or Config.PUBLISH_NUM_MESSAGES
 class PubSubMessagePublisher(AbsResultPiblisher, LoggerMixin):
 
     BATCH_SETTINGS = pubsub_v1.types.BatchSettings(
-        max_messages=NUM_MESSAGES,
-        max_bytes=1024,
-        max_latency=1
+        max_messages=NUM_MESSAGES, max_bytes=1024, max_latency=1
     )
 
     def __init__(self) -> None:
         self._project_id = os.environ.get("PROJECT_ID") or Config.PROJECT_ID
         self._topic_id = (
-                os.environ.get("PUBLISH_TOPIC_ID") or Config.PUBLISH_TOPIC_ID
+            os.environ.get("PUBLISH_TOPIC_ID") or Config.PUBLISH_TOPIC_ID
         )
         self._num_messages = NUM_MESSAGES
         self._pid = get_pid_number()
@@ -41,14 +39,14 @@ class PubSubMessagePublisher(AbsResultPiblisher, LoggerMixin):
             return
         publish_futures = []
         for result in res:
-            payload = str({
-                "crn": result[0],
-                "prediction": result[-1],
-                "features": result[1]
-            }).encode("utf-8")
-            publish_future = self._publisher.publish(
-                self._topic_path, payload
-            )
+            payload = str(
+                {
+                    "crn": result[0],
+                    "prediction": result[-1],
+                    "features": result[1],
+                }
+            ).encode("utf-8")
+            publish_future = self._publisher.publish(self._topic_path, payload)
             publish_futures.append(publish_future)
 
         futures.wait(publish_futures, return_when=futures.ALL_COMPLETED)

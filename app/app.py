@@ -8,7 +8,11 @@ from app.workers import (
 )
 from app.message_consumer import PubSubMessageConsumer
 from app.message_processor import IrisClassifier
-from app.result_publisher import BigTablePublisher, PubSubMessagePublisher
+from app.result_publisher import (
+    BigTablePublisher,
+    PubSubMessagePublisher,
+    BigQueryMessagePublisher,
+)
 from app.helpers import LoggerMixin, get_pid_number
 from config import Config
 
@@ -31,8 +35,10 @@ class App(LoggerMixin):
         # Initialize classes operated by the workers
         self._pubsub_consumer = PubSubMessageConsumer()
         self._model = IrisClassifier()
+
         # self._res_publisher = BigTablePublisher()
-        self._res_publisher = PubSubMessagePublisher()
+        # self._res_publisher = PubSubMessagePublisher()
+        self._res_publisher = BigQueryMessagePublisher()
 
         # Initialize workers (threads) doing actual work
         self._threads = []
