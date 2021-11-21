@@ -145,7 +145,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         super(JobDistributor, self).__init__(*args, **kwargs)
         self._queue_in = queue_in
         self._job_queue = job_queue_in
-        self._default_n_workers = n_initial_workers
+        self._min_n_workers = n_initial_workers
         self._worker_queue_size = worker_queue_size
         self._job_batch_size = job_distribution_batch_size
         self._max_n_workers = max_workers
@@ -163,9 +163,8 @@ class JobDistributor(threading.Thread, LoggerMixin):
         """
         self._crete_min_number_of_workers()
         self.logger.info(
-            f"{self._identity} started {self._default_n_workers} workers"
+            f"{self._identity} started {self._min_n_workers} workers"
         )
-
         while True:
             # Check if its time to stop the distributor
             stop = self._check_if_time_to_stop()
@@ -186,16 +185,15 @@ class JobDistributor(threading.Thread, LoggerMixin):
 
     def _scale_workers(self) -> None:
         direction = self._determine_scaling_direction()
-        if (
-            direction == "UP"
-            and len(self._running_workers) < self._max_n_workers
-        ):
-            self._append_new_worker_to_running_pool()
-        elif direction == "DOWN":
-            self._remove_worker_from_running_pool()
+        n_running_workers = len(self._running_workers)
 
-        if len(self._stopping_workers):
-            self._try_joining_stopping_workers_within_timeout()
+        if direction == "UP" and n_running_workers < self._max_n_workers:
+            self._append_new_worker_to_running_pool()
+        elif direction == "DOWN" and n_running_workers > self._min_n_workers:
+            self._remove_worker_from_running_pool()
+        else:
+            if len(self._stopping_workers):
+                self._try_joining_stopping_workers_within_timeout()
 
     def _distribute_jobs_batch_across_workers(self) -> None:
         # Get a batch of jobs from the job queue coming from the Puller to
@@ -207,6 +205,8 @@ class JobDistributor(threading.Thread, LoggerMixin):
 
         # TODO: Might be bad design - you always start from the first worker.
         #       BUT if could finish processing a message, so there's slot?
+        # TODO: This is not Round Robin lol - google how to do it (distribute
+        #       N tasks across M workers)
         while jobs_batch:
             job = jobs_batch.pop()
             for worker in self._running_workers:
@@ -233,12 +233,8 @@ class JobDistributor(threading.Thread, LoggerMixin):
         IT IS ASSUMED for simplicity sake to remove a random worker, not the
         one with the least tasks in the queue
         """
-        n_running_workers = len(self._running_workers)
-        if n_running_workers == self._default_n_workers:
-            return
-
         worker_to_stop = self._running_workers.pop(
-            random.randint(0, n_running_workers)
+            random.randint(0, len(self._running_workers))
         )
         worker_to_stop.job_queue.put("STOP")
         self._stopping_workers.append(worker_to_stop)
@@ -302,6 +298,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         Kill a worker when too many slots in the worker queues (batch x 2)
         Else do not change the number of workers
         """
+        # TODO: Double check your scaling logic based on slots makes sense
         currently_available_queue_slots = 0
         for worker in self._running_workers:
             jobs_in_queue, queue_size = worker.my_capacity
@@ -334,7 +331,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
     def _crete_min_number_of_workers(self) -> None:
         # Create min number of workers
         workers = []
-        for i in range(self._default_n_workers):
+        for i in range(self._min_n_workers):
             worker = self._create_new_worker()
             workers.append(worker)
         # Start the workers
@@ -356,7 +353,6 @@ class ElasticApp(LoggerMixin):
 
     NUMBER_OF_WORKERS = 2
     MAX_NUMBER_OF_WORKERS = 8
-
     JOB_QUEUE_SIZE = 100
     WORKER_QUEUE_SIZE = 10
     JOB_BATCH_SIZE = 10
