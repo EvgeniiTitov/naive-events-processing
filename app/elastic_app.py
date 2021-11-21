@@ -23,12 +23,14 @@ workers.
 """
 
 # DUMMY EXAMPLE
+# TODO: How to do something once in N amount of time in the event loop?
 
 import time
 import multiprocessing
 import threading
 import typing as t
 import queue
+import random
 
 from app.helpers import LoggerMixin, get_pid_number
 
@@ -61,6 +63,10 @@ class Worker(multiprocessing.Process, LoggerMixin):
     @property
     def job_queue(self) -> multiprocessing.Queue:
         return self._job_queue
+
+    @property
+    def my_capacity(self) -> t.Tuple[int, int]:
+        return self._job_queue.qsize(), self._job_queue._maxsize
 
     def run(self) -> None:
         while True:
@@ -138,52 +144,124 @@ class JobDistributor(threading.Thread, LoggerMixin):
         super(JobDistributor, self).__init__(*args, **kwargs)
         self._queue_in = queue_in
         self._job_queue = job_queue_in
-
         self._n_workers = n_initial_workers
         self._worker_queue_size = worker_queue_size
         self._job_batch_size = job_distribution_batch_size
-
         self._running_workers: t.List[Worker] = []
+        self._stopping_workers: t.List[Worker] = []
         self._pid = get_pid_number()
         self._identity = f"PID: {self._pid} - JobDistributor"
         self.logger.info(f"{self._identity} inited")
 
     def run(self) -> None:
         """
-        Tasks:
-        1. Check queue_in to stop when required
-        2. Get a job from the job queue
-            2.a Round robin the job to one of the running workers
-        3. Check worker queues
-            - Full? Create a new worker, add to the pull
-            - Empty? Check if more than min N of workers, if yes send kill message
-
+        Main event loop of the Distributor
         """
         self._crete_min_number_of_workers()
         self.logger.info(f"{self._identity} started {self._n_workers} workers")
         while True:
-            try:
-                task = self._queue_in.get_nowait()
-            except queue.Empty:
-                pass
-            else:
-                if "STOP" in task:
-                    self._stop_running_workers()
-                    break
+            stop = self._check_if_time_to_stop()
+            if stop:
+                self._stop_running_workers()
+                break
 
-            # TODO: 1. Distribute a batch of messages coming from the job Q
-            #       2. Spawn / kill workers depending on the load
+            # TODO: Doing this each loop is expensive
+            self._scale_workers()
 
+            self._distribute_tasks_across_workers()
         self.logger.info(f"{self._identity} stopped")
 
-    def _check_if_new_worker_required(self) -> bool:
+    def _scale_workers(self) -> None:
+        """
+        Check if we need more workers or too many and we need to kill one
+
+        if new required:
+            - Create a worker
+            - Add it to the pool
+
+        If too many:
+            - Send the stop message to this worker
+            - Make sure it doesnt get new tasks, pop from the pool?
+            - Make sure it stopped successfully?
+        """
+        direction = self._determine_scaling_direction()
+        if direction == "UP":
+            self._append_new_worker_to_running_pool()
+            return
+        elif direction == "DOWN":
+            self._remove_worker_from_running_pool()
+        self._join_stopping_workers()
+
+    def _distribute_tasks_across_workers(self) -> None:
+        raise NotImplementedError
+
+    def _remove_worker_from_running_pool(self) -> None:
+        """
+        IT IS ASSUMED for simplicity sake to remove a random worker, not the
+        one with the least tasks in the queue
+        """
+        worker_to_stop = self._running_workers.pop(
+            random.randint(0, len(self._running_workers))
+        )
+        worker_to_stop.job_queue.put("STOP")
+        self._stopping_workers.append(worker_to_stop)
+
+    def _append_new_worker_to_running_pool(self) -> None:
+        worker = self._create_new_worker()
+        self._running_workers.append(worker)
+
+    def _check_if_time_to_stop(self) -> bool:
+        try:
+            task = self._queue_in.get_nowait()
+        except queue.Empty:
+            return False
+        else:
+            if "STOP" in task:
+                return True
+            else:
+                self.logger.warning(
+                    f"{self._identity} got unknown command {task}, ignored"
+                )
+                return False
+
+    def _join_stopping_workers(self) -> None:
+        if not len(self._stopping_workers):
+            return
+        self._stopping_workers = [
+            worker
+            for worker in self._running_workers
+            if not self._join_worker_within_timeout(worker)
+        ]
+
+    def _join_worker_within_timeout(
+        self, worker: Worker, timeout: float = 0.1
+    ) -> bool:
+        try:
+            worker.join(timeout)
+        except TimeoutError:
+            return False
+        else:
+            return True
+
+    def _determine_scaling_direction(self) -> str:
         """
         IT IS ASSUMED that a new worker is required when there is not enough
-        space to distribute a batch of messages across currently the currently
-        running workers
+        space to distribute a batch of messages across currently
+        running workers.
+        Kill a worker when too many slots in the worker queues (batch x 2)
+        Else do not change the number of workers
         """
+        currently_available_slots = 0
         for worker in self._running_workers:
-            pass
+            jobs_in_queue, queue_size = worker.my_capacity
+            currently_available_slots += queue_size - jobs_in_queue
+
+        if currently_available_slots <= self._job_batch_size:
+            return "UP"
+        elif currently_available_slots > self._job_batch_size * 2:
+            return "DOWN"
+        else:
+            return "KEEP"
 
     def _stop_running_workers(self) -> None:
         self._signal_workers_to_stop()
@@ -195,6 +273,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         while self._running_workers:
             worker = self._running_workers.pop()
             worker.join()  # Could hang indefinitely
+            # worker.job_queue.close()
 
             # TODO: Could be done smarter - randomize worker to join each time
             # worker = self._running_workers[0]
@@ -219,7 +298,6 @@ class JobDistributor(threading.Thread, LoggerMixin):
         for i in range(self._n_workers):
             worker = self._create_new_worker()
             workers.append(worker)
-
         # Start the workers
         for worker in workers:
             worker.start()
