@@ -23,7 +23,6 @@ workers.
 """
 
 # DUMMY EXAMPLE
-# TODO: Do pipes have capacity like queues?! (size?)
 
 import time
 import multiprocessing
@@ -34,7 +33,7 @@ import queue
 from app.helpers import LoggerMixin, get_pid_number
 
 
-pipe_conn = multiprocessing.connection.Connection
+fake_userdefined_object = t.Any
 
 
 class Worker(multiprocessing.Process, LoggerMixin):
@@ -46,29 +45,30 @@ class Worker(multiprocessing.Process, LoggerMixin):
 
     def __init__(
         self,
-        job_pipe_end: pipe_conn,
-        message_processor,
-        result_publisher,
+        job_queue: multiprocessing.Queue,
+        message_processor: fake_userdefined_object,
+        result_publisher: fake_userdefined_object,
         *args,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
-        self._pipe_end = job_pipe_end
+        self._job_queue = job_queue
         self._message_processor = message_processor
         self._result_publisher = result_publisher
         self._pid = get_pid_number()
         self.logger.info(f"PID: {self._pid} - Worker inited")
 
+    @property
+    def job_queue(self) -> multiprocessing.Queue:
+        return self._job_queue
+
     def run(self) -> None:
         while True:
-            payload: t.List[t.Any] = self._pipe_end.recv()
-            if len(payload) == 1 and "STOP" in payload:
+            task: t.Any = self._job_queue.get()
+            if "STOP" in task:
                 break
-
-            # It is assumed only a single message can be sent through the pipe
-            message = payload[0]
-            print(f"PID: {self._pid} - processing message {message}")
-            time.sleep(2)  # Long lasting message processing
+            time.sleep(2)  # Long lasting task processing
+            print(f"PID: {self._pid} - processed task {task}")
 
         self.logger.info(f"PID: {self._pid} - Worker stopped")
 
@@ -85,7 +85,7 @@ class MessagePuller(threading.Thread, LoggerMixin):
         self,
         queue_in: queue.Queue,
         job_queue_out: queue.Queue,
-        message_puller,
+        message_puller: fake_userdefined_object,
         *args,
         **kwargs,
     ) -> None:
@@ -100,16 +100,15 @@ class MessagePuller(threading.Thread, LoggerMixin):
         job_counter = 0
         while True:
             try:
-                payload = self._queue_in.get_nowait()
+                task = self._queue_in.get_nowait()
             except queue.Empty:
                 pass
             else:
-                if "STOP" in payload:
+                if "STOP" in task:
                     break
 
             new_job = f"Task: {job_counter}"
             job_counter += 1
-
             self._job_queue_out.put(new_job)
 
         self.logger.info(f"PID: {self._pid} - MessagePuller stopped")
@@ -129,21 +128,25 @@ class JobDistributor(threading.Thread, LoggerMixin):
     def __init__(
         self,
         queue_in: queue.Queue,
-        job_queue: queue.Queue,
+        job_queue_in: queue.Queue,
         n_initial_workers: int,
+        worker_queue_size: int,
+        job_distribution_batch_size: int,
         *args,
         **kwargs,
     ) -> None:
         super(JobDistributor, self).__init__(*args, **kwargs)
         self._queue_in = queue_in
-        self._job_queue = job_queue
+        self._job_queue = job_queue_in
+
         self._n_workers = n_initial_workers
+        self._worker_queue_size = worker_queue_size
+        self._job_batch_size = job_distribution_batch_size
 
-        # TODO: 1. Start N workers
-        #       2. You have to keep track of process objects + pipes
-
+        self._running_workers: t.List[Worker] = []
         self._pid = get_pid_number()
-        self.logger.info(f"PID: {self._pid} - JobDistributor inited")
+        self._identity = f"PID: {self._pid} - JobDistributor"
+        self.logger.info(f"{self._identity} inited")
 
     def run(self) -> None:
         """
@@ -156,4 +159,77 @@ class JobDistributor(threading.Thread, LoggerMixin):
             - Empty? Check if more than min N of workers, if yes send kill message
 
         """
-        pass
+        self._crete_min_number_of_workers()
+        self.logger.info(f"{self._identity} started {self._n_workers} workers")
+        while True:
+            try:
+                task = self._queue_in.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                if "STOP" in task:
+                    self._stop_running_workers()
+                    break
+
+            # TODO: 1. Distribute a batch of messages coming from the job Q
+            #       2. Spawn / kill workers depending on the load
+
+        self.logger.info(f"{self._identity} stopped")
+
+    def _check_if_new_worker_required(self) -> bool:
+        """
+        IT IS ASSUMED that a new worker is required when there is not enough
+        space to distribute a batch of messages across currently the currently
+        running workers
+        """
+        for worker in self._running_workers:
+            pass
+
+    def _stop_running_workers(self) -> None:
+        self._signal_workers_to_stop()
+        self.logger.info(f"{self._identity} signalled workers to stop")
+        self._join_workers()
+        self.logger.info(f"{self._identity} joined the workers")
+
+    def _join_workers(self) -> None:
+        while self._running_workers:
+            worker = self._running_workers.pop()
+            worker.join()  # Could hang indefinitely
+
+            # TODO: Could be done smarter - randomize worker to join each time
+            # worker = self._running_workers[0]
+            # try:
+            #     worker.join(timeout=1.0)
+            # except TimeoutError:
+            #     self.logger.info(
+            #         f"{self._identity} failed to join worker within "
+            #         f"timeout, skipping"
+            #     )
+            #     continue
+            # else:
+            #     self._running_workers.pop(0)
+
+    def _signal_workers_to_stop(self) -> None:
+        for worker in self._running_workers:
+            worker.job_queue.put("STOP")
+
+    def _crete_min_number_of_workers(self) -> None:
+        # Create min number of workers
+        workers = []
+        for i in range(self._n_workers):
+            worker = self._create_new_worker()
+            workers.append(worker)
+
+        # Start the workers
+        for worker in workers:
+            worker.start()
+            self._running_workers.append(worker)
+
+    def _create_new_worker(self) -> Worker:
+        worker_job_queue = multiprocessing.Queue(self._worker_queue_size)
+        worker = Worker(
+            job_queue=worker_job_queue,
+            message_processor="fake message processor",
+            result_publisher="fake result publisher",
+        )
+        return worker
