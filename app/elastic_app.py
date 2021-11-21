@@ -25,6 +25,7 @@ workers.
 # DUMMY EXAMPLE
 # TODO: How to do something once in N amount of time in the event loop?
 # TODO: Upper worker limit
+# TODO: Build up a batch of messages yourself before distributing them
 
 import time
 import multiprocessing
@@ -74,6 +75,7 @@ class Worker(multiprocessing.Process, LoggerMixin):
             task: t.Any = self._job_queue.get()
             if "STOP" in task:
                 break
+
             time.sleep(2)  # Long lasting task processing
             print(f"PID: {self._pid} - processed task {task}")
 
@@ -145,7 +147,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         super(JobDistributor, self).__init__(*args, **kwargs)
         self._queue_in = queue_in
         self._job_queue = job_queue_in
-        self.default_n_workers = n_initial_workers
+        self._default_n_workers = n_initial_workers
         self._worker_queue_size = worker_queue_size
         self._job_batch_size = job_distribution_batch_size
         self._running_workers: t.List[Worker] = []
@@ -160,7 +162,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         """
         self._crete_min_number_of_workers()
         self.logger.info(
-            f"{self._identity} started {self.default_n_workers} workers"
+            f"{self._identity} started {self._default_n_workers} workers"
         )
 
         while True:
@@ -194,6 +196,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
     def _distribute_tasks_across_workers(self) -> None:
         # Get a batch of jobs from the job queue coming from the Puller to
         # distribute across the running workers
+        # TODO: !!! You dont get a batch of messages, accumulate one
         try:
             jobs_batch: t.List[t.Any] = self._job_queue.get(timeout=0.1)
         except TimeoutError:
@@ -219,7 +222,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         one with the least tasks in the queue
         """
         n_running_workers = len(self._running_workers)
-        if n_running_workers <= self.default_n_workers:
+        if n_running_workers <= self._default_n_workers:
             return
 
         worker_to_stop = self._running_workers.pop(
@@ -319,7 +322,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
     def _crete_min_number_of_workers(self) -> None:
         # Create min number of workers
         workers = []
-        for i in range(self.default_n_workers):
+        for i in range(self._default_n_workers):
             worker = self._create_new_worker()
             workers.append(worker)
         # Start the workers
@@ -335,3 +338,71 @@ class JobDistributor(threading.Thread, LoggerMixin):
             result_publisher="fake result publisher",
         )
         return worker
+
+
+class ElasticApp(LoggerMixin):
+
+    NUMBER_OF_WORKERS = 4
+    JOB_QUEUE_SIZE = 100
+    WORKER_QUEUE_SIZE = 10
+    JOB_BATCH_SIZE = 10
+
+    def __init__(self):
+        self._pid = get_pid_number()
+        self._identity = f"PID: {self._pid} - ElasticApp"
+
+        self._puller_status_queue = queue.Queue()
+        self._distributor_status_queue = queue.Queue()
+        self._job_queue = queue.Queue(ElasticApp.JOB_QUEUE_SIZE)
+        self.logger.info(f"{self._identity} - Queues inited")
+
+        self._threads = []
+
+        self._message_puller_thread = MessagePuller(
+            queue_in=self._puller_status_queue,
+            job_queue_out=self._job_queue,
+            message_puller="FakeUserDefinedMessagePuller",
+        )
+        self._threads.append(self._message_puller_thread)
+
+        self._distributor_thread = JobDistributor(
+            queue_in=self._distributor_status_queue,
+            job_queue_in=self._job_queue,
+            n_initial_workers=ElasticApp.NUMBER_OF_WORKERS,
+            worker_queue_size=ElasticApp.WORKER_QUEUE_SIZE,
+            job_distribution_batch_size=ElasticApp.JOB_BATCH_SIZE,
+        )
+        self._threads.append(self._distributor_thread)
+
+    def start(self) -> None:
+        for thread in self._threads:
+            thread.start()
+        self.logger.info(f"{self._identity} - started Puller and Distributor")
+
+    def stop(self) -> None:
+        self._puller_status_queue.put("STOP")
+        self._distributor_status_queue.put("STOP")
+        self.logger.info(
+            f"{self._identity} - STOP messages sent to the Puller and "
+            f"Distributor. Joining..."
+        )
+        for thread in self._threads:
+            thread.join()
+        self.logger.info(f"{self._identity} - Threads joined!")
+
+
+def main() -> int:
+    app = ElasticApp()
+    app.start()
+    try:
+        for i in range(60):
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+    app.stop()
+
+    return 0
+
+
+if __name__ == "__main__":
+    main()
