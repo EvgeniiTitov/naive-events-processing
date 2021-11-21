@@ -22,10 +22,7 @@ workers.
     kill message to one of the workers and then join it, so the process dies
 """
 
-# DUMMY EXAMPLE
-# TODO: How to do something once in N amount of time in the event loop?
-# TODO: Upper worker limit
-# TODO: Build up a batch of messages yourself before distributing them
+# DUMMY EXAMPLE - probably very inefficient
 
 import time
 import multiprocessing
@@ -141,6 +138,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         n_initial_workers: int,
         worker_queue_size: int,
         job_distribution_batch_size: int,
+        max_workers: int,
         *args,
         **kwargs,
     ) -> None:
@@ -150,8 +148,11 @@ class JobDistributor(threading.Thread, LoggerMixin):
         self._default_n_workers = n_initial_workers
         self._worker_queue_size = worker_queue_size
         self._job_batch_size = job_distribution_batch_size
+        self._max_n_workers = max_workers
+
         self._running_workers: t.List[Worker] = []
         self._stopping_workers: t.List[Worker] = []
+
         self._pid = get_pid_number()
         self._identity = f"PID: {self._pid} - JobDistributor"
         self.logger.info(f"{self._identity} inited")
@@ -179,13 +180,16 @@ class JobDistributor(threading.Thread, LoggerMixin):
             self._scale_workers()
 
             # Receive a batch of jobs and distribute across the running workers
-            self._distribute_tasks_across_workers()
+            self._distribute_jobs_batch_across_workers()
 
         self.logger.info(f"{self._identity} stopped")
 
     def _scale_workers(self) -> None:
         direction = self._determine_scaling_direction()
-        if direction == "UP":
+        if (
+            direction == "UP"
+            and len(self._running_workers) < self._max_n_workers
+        ):
             self._append_new_worker_to_running_pool()
         elif direction == "DOWN":
             self._remove_worker_from_running_pool()
@@ -193,13 +197,11 @@ class JobDistributor(threading.Thread, LoggerMixin):
         if len(self._stopping_workers):
             self._try_joining_stopping_workers_within_timeout()
 
-    def _distribute_tasks_across_workers(self) -> None:
+    def _distribute_jobs_batch_across_workers(self) -> None:
         # Get a batch of jobs from the job queue coming from the Puller to
         # distribute across the running workers
-        # TODO: !!! You dont get a batch of messages, accumulate one
-        try:
-            jobs_batch: t.List[t.Any] = self._job_queue.get(timeout=0.1)
-        except TimeoutError:
+        jobs_batch = self._accumulage_jobs_batch()
+        if not len(jobs_batch):
             self.logger.info(f"{self._identity} No jobs in the job queue")
             return
 
@@ -216,13 +218,23 @@ class JobDistributor(threading.Thread, LoggerMixin):
                     break
         self.logger.info(f"{self._identity} - a batch of jobs distributed")
 
+    def _accumulage_jobs_batch(self) -> t.List[t.Any]:
+        batch = []
+        for i in range(self._job_batch_size):
+            try:
+                job = self._job_queue.get(timeout=0.05)
+            except TimeoutError:
+                continue
+            batch.append(job)
+        return batch
+
     def _remove_worker_from_running_pool(self) -> None:
         """
         IT IS ASSUMED for simplicity sake to remove a random worker, not the
         one with the least tasks in the queue
         """
         n_running_workers = len(self._running_workers)
-        if n_running_workers <= self._default_n_workers:
+        if n_running_workers == self._default_n_workers:
             return
 
         worker_to_stop = self._running_workers.pop(
@@ -342,7 +354,9 @@ class JobDistributor(threading.Thread, LoggerMixin):
 
 class ElasticApp(LoggerMixin):
 
-    NUMBER_OF_WORKERS = 4
+    NUMBER_OF_WORKERS = 2
+    MAX_NUMBER_OF_WORKERS = 8
+
     JOB_QUEUE_SIZE = 100
     WORKER_QUEUE_SIZE = 10
     JOB_BATCH_SIZE = 10
@@ -369,6 +383,7 @@ class ElasticApp(LoggerMixin):
             queue_in=self._distributor_status_queue,
             job_queue_in=self._job_queue,
             n_initial_workers=ElasticApp.NUMBER_OF_WORKERS,
+            max_workers=ElasticApp.MAX_NUMBER_OF_WORKERS,
             worker_queue_size=ElasticApp.WORKER_QUEUE_SIZE,
             job_distribution_batch_size=ElasticApp.JOB_BATCH_SIZE,
         )
