@@ -20,6 +20,8 @@ workers.
     then the Distributor spawns a new worker and adds it to the pull of currently
     running workers. If pipes are empty (periodically check their sizes), then put a
     kill message to one of the workers and then join it, so the process dies
+
+No mutexes used, each worker gets a dedicated Queue, no sharing of resources
 """
 
 # DUMMY EXAMPLE - probably very inefficient
@@ -73,7 +75,10 @@ class Worker(multiprocessing.Process, LoggerMixin):
             if "STOP" in task:
                 break
 
-            time.sleep(2)  # Long lasting task processing
+            # TODO: Proper task processor and result publisher implementation
+            # Long lasting task processing using the passed objects:
+            # message processor and result publisher
+            time.sleep(2)
             print(f"PID: {self._pid} - processed task {task}")
 
         self.logger.info(f"PID: {self._pid} - Worker stopped")
@@ -113,6 +118,10 @@ class MessagePuller(threading.Thread, LoggerMixin):
                 if "STOP" in task:
                     break
 
+            # TODO: Proper message_puller implementation
+            # Fake message creation - in reality it use the message_puller
+            # object passed by the user, which extracts messages from somewhere
+            # say a PubSub topic
             new_job = f"Task: {job_counter}"
             job_counter += 1
             self._job_queue_out.put(new_job)
@@ -124,11 +133,9 @@ class JobDistributor(threading.Thread, LoggerMixin):
     """
     Fake job (message) distributor running in a thread in the main process
     whose main task is to:
-    1. Distribute messages from the job queue
+    1. Distribute messages from the job queue across workers
     2. Handle the load by monitoring job pipes to the workers and
        creating/killing workers depending on the number of jobs in their pipes
-       i.e the pipe is empty? -> kill the worker, the pipes of the existing
-       worker are full? -> spawn a new process and add to the pool
     """
 
     def __init__(
@@ -175,15 +182,14 @@ class JobDistributor(threading.Thread, LoggerMixin):
 
             # Ensure the appropriate number of workers are running depending
             # on the load
-            # TODO: Scaling workers each loop iteration might be expensive
-            self._scale_workers()
+            self._manage_workers()
 
             # Receive a batch of jobs and distribute across the running workers
             self._distribute_jobs_batch_across_workers()
 
         self.logger.info(f"{self._identity} stopped")
 
-    def _scale_workers(self) -> None:
+    def _manage_workers(self) -> None:
         direction = self._determine_scaling_direction()
         n_running_workers = len(self._running_workers)
 
@@ -191,21 +197,27 @@ class JobDistributor(threading.Thread, LoggerMixin):
             self._append_new_worker_to_running_pool()
         elif direction == "DOWN" and n_running_workers > self._min_n_workers:
             self._remove_worker_from_running_pool()
-        else:
-            if len(self._stopping_workers):
-                self._try_joining_stopping_workers_within_timeout()
+
+        if len(self._stopping_workers):
+            self._try_joining_stopping_workers_within_timeout()
 
     def _distribute_jobs_batch_across_workers(self) -> None:
         # Get a batch of jobs from the job queue coming from the Puller
         jobs_batch = self._accumulage_jobs_batch()
         if not len(jobs_batch):
-            self.logger.info(f"{self._identity} No jobs in the job queue")
+            self.logger.info(
+                f"{self._identity} failed to accumulate a batch of jobs, "
+                f"the job queue is empty"
+            )
             return
 
         # Distribute the jobs across the running workers (Round Robin)
         while jobs_batch:
             job = jobs_batch.pop()
+            # TODO: Consider shuffling workers before distributing the tasks,
+            #       it appears the first ones might be potentially busier?
             for worker in self._get_next_worker_round_robin():
+                # If worker queue is full, try the next worker
                 try:
                     worker.job_queue.put_nowait(job)
                 except Exception:
@@ -234,6 +246,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         IT IS ASSUMED for simplicity sake to remove a random worker, not the
         one with the least tasks in the queue
         """
+        # TODO: How to quickly find a worker with the fewest jobs in its queue?
         worker_to_stop = self._running_workers.pop(
             random.randint(0, len(self._running_workers))
         )
@@ -263,7 +276,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
                 return False
 
     def _try_joining_stopping_workers_within_timeout(self) -> None:
-        failed_to_join = []
+        failed_to_join_within_timeout = []
         for worker in self._stopping_workers:
             joined = self._join_worker_within_timeout(worker)
             if joined:
@@ -271,8 +284,8 @@ class JobDistributor(threading.Thread, LoggerMixin):
                     f"{self._identity} scaling down completed, worker killed"
                 )
             else:
-                failed_to_join.append(worker)
-        self._stopping_workers = failed_to_join
+                failed_to_join_within_timeout.append(worker)
+        self._stopping_workers = failed_to_join_within_timeout
 
     def _join_worker_within_timeout(
         self, worker: Worker, timeout: float = 0.1
