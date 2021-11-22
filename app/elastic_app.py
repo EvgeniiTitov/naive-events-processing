@@ -88,8 +88,10 @@ class Worker(multiprocessing.Process, LoggerMixin):
             # Long lasting task processing using the passed objects:
             # message processor and result publisher
             time.sleep(2)
-            print(f"PID: {self._pid} - processed task {task}")
-
+            print(
+                f"PID: {self._pid} - processed task {task}; "
+                f"My queue size: {self.job_queue.qsize()}"
+            )
         self.logger.info(f"PID: {self._pid} - Worker stopped")
 
 
@@ -133,7 +135,10 @@ class MessagePuller(threading.Thread, LoggerMixin):
             # say a PubSub topic
             new_job = f"Task: {job_counter}"
             job_counter += 1
-            self._job_queue_out.put(new_job)
+            try:
+                self._job_queue_out.put(new_job, timeout=1.0)
+            except Exception:
+                pass
 
         self.logger.info(f"PID: {self._pid} - MessagePuller stopped")
 
