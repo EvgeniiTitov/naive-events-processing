@@ -1,7 +1,8 @@
 This is an example of how not to process events. Naive attempt to see what python is capable of before 
 trying out proper technologies for events processing.
 
- 
+
+### App (app/app.py)
 This events processing Application has 3 major parts:
 
 1) Message consumer - could be anything as long as it implements the appropriate interface. For now its PubSub
@@ -24,13 +25,13 @@ Test 1
 - Single core (single app instance) processed 235 messages in 60 seconds (batch size 1)
 - 4 cores (4 app instances) processed 998 messages in 60 seconds (batch size 1)
 
-==> Scaling using more app instances is possible
+=> Scaling using more app instances is possible
 
 Test 2
 - Single core (single app instance) processed 235 messages in 60 seconds (batch size 1)
 - Single core (single app instance) processed 691 messages in 60 seconds (batch size 3)
 
-==> Scaling by reading (receiving) a batch of messages is possible
+=> Scaling by reading (receiving) a batch of messages is possible
 
 Test 3
 
@@ -49,15 +50,9 @@ TBA
 *TO THINK*:
 - If one worker fails, how do I kill the other ones? Some channel to pass the
 message back to the App, so it kills the remaining workers?
-  
-- How to implement scalability? Spawn new message processing processes when
-there are many messages in the queue and kill them when not needed? Queues? If
-  queues to the currently running processes are getting full, spin up a 
-  new process. Round robin?
-  
-Multiple message consumers putting message in one large queue before distributing
-messages across N workers?
 
-Read messages -> message queue -> Distributor monitors currently running processes and
-distributes messages between them using queue -> if queues are full, add a new processor / if 
-queues are empty kill a running processor once its done with its messages
+
+### ElasticApp (app/elastic_app.py)
+This is a naive attempt to implement scalability within one machine. The Distributor receives tasks from the job queue
+and distributes them across N running workers. If workers get too busy, it spawns a new one in the new process and
+adds it to the pool. If the load goes down, the distributor deletes extra workers.
