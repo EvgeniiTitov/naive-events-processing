@@ -196,20 +196,16 @@ class JobDistributor(threading.Thread, LoggerMixin):
                 self._try_joining_stopping_workers_within_timeout()
 
     def _distribute_jobs_batch_across_workers(self) -> None:
-        # Get a batch of jobs from the job queue coming from the Puller to
-        # distribute across the running workers
+        # Get a batch of jobs from the job queue coming from the Puller
         jobs_batch = self._accumulage_jobs_batch()
         if not len(jobs_batch):
             self.logger.info(f"{self._identity} No jobs in the job queue")
             return
 
-        # TODO: Might be bad design - you always start from the first worker.
-        #       BUT if could finish processing a message, so there's slot?
-        # TODO: This is not Round Robin lol - google how to do it (distribute
-        #       N tasks across M workers)
+        # Distribute the jobs across the running workers (Round Robin)
         while jobs_batch:
             job = jobs_batch.pop()
-            for worker in self._running_workers:
+            for worker in self._get_next_worker_round_robin():
                 try:
                     worker.job_queue.put_nowait(job)
                 except Exception:
@@ -217,6 +213,11 @@ class JobDistributor(threading.Thread, LoggerMixin):
                 else:
                     break
         self.logger.info(f"{self._identity} - a batch of jobs distributed")
+
+    def _get_next_worker_round_robin(self) -> t.Iterator[Worker]:
+        while True:
+            for worker in self._running_workers:
+                yield worker
 
     def _accumulage_jobs_batch(self) -> t.List[t.Any]:
         batch = []
