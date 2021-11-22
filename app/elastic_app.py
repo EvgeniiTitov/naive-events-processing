@@ -276,7 +276,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         for i in range(self._job_batch_size):
             try:
                 job = self._job_queue.get(timeout=0.05)
-            except TimeoutError:
+            except queue.Empty:
                 continue
             batch.append(job)
         return batch
@@ -357,6 +357,20 @@ class JobDistributor(threading.Thread, LoggerMixin):
         Else do not change the number of workers
         """
         # TODO: Double check your scaling logic based on slots makes sense
+        #       IT DOESNT! Spikes up down up down
+        '''
+        Exception in thread Thread-2:
+        Traceback (most recent call last):
+          File "/home/etitov1_woolworths_com_au/.pyenv/versions/3.6.5/lib/python3.6/threading.py", line 916, in _bootstrap_inner
+            self.run()
+          File "/home/etitov1_woolworths_com_au/coding/naive-events-processor/app/elastic_app.py", line 225, in run
+            self._manage_workers()
+          File "/home/etitov1_woolworths_com_au/coding/naive-events-processor/app/elastic_app.py", line 239, in _manage_workers
+            self._remove_worker_from_running_pool()
+          File "/home/etitov1_woolworths_com_au/coding/naive-events-processor/app/elastic_app.py", line 287, in _remove_worker_from_running_pool
+            random.randint(0, len(self._running_workers))
+        IndexError: pop index out of range
+        '''
         currently_available_queue_slots = 0
         for worker in self._running_workers:
             jobs_in_queue, queue_size = worker.my_capacity
