@@ -66,8 +66,7 @@ class Worker(multiprocessing.Process, LoggerMixin):
         self._job_queue = job_queue
         self._message_processor = message_processor
         self._result_publisher = result_publisher
-        self._pid = get_pid_number()
-        self.logger.info(f"PID: {self._pid} - Worker inited")
+        self._pid = None
 
     @property
     def job_queue(self) -> multiprocessing.Queue:
@@ -78,6 +77,8 @@ class Worker(multiprocessing.Process, LoggerMixin):
         return self._job_queue.qsize(), self._job_queue._maxsize
 
     def run(self) -> None:
+        self._pid = get_pid_number()  # Child process PID
+        self.logger.info(f"PID: {self._pid} - Worker started")
         while True:
             task: t.Any = self._job_queue.get()
             if "STOP" in task:
@@ -267,7 +268,10 @@ class JobDistributor(threading.Thread, LoggerMixin):
     def _append_new_worker_to_running_pool(self) -> None:
         worker = self._create_new_worker()
         self._running_workers.append(worker)
-        self.logger.info(f"{self._identity} scaled up, added new worker")
+        self.logger.info(
+            f"{self._identity} scaled up, added new worker. Currently running "
+            f"workers: {len(self._running_workers)}"
+        )
 
     def _check_if_time_to_stop(self) -> bool:
         try:
@@ -289,7 +293,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
             joined = self._join_worker_within_timeout(worker)
             if joined:
                 self.logger.info(
-                    f"{self._identity} scaling down completed, worker killed"
+                    f"{self._identity} scaled down, worker killed"
                 )
             else:
                 failed_to_join_within_timeout.append(worker)
