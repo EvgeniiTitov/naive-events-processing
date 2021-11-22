@@ -22,6 +22,14 @@ workers.
     kill message to one of the workers and then join it, so the process dies
 
 No mutexes used, each worker gets a dedicated Queue, no sharing of resources
+
+
+Issues:
+1. Picking / unpickling heavy messages is expensive (IPC python issue) ->
+   Apache Arrow / Ray or similar should fix the issue.
+2. Scaling is possible within one machine only, cannot utilize a cluster ->
+   RPCs?
+3. Single Puller / Single job queue
 """
 
 # DUMMY EXAMPLE - probably very inefficient
@@ -414,20 +422,3 @@ class ElasticApp(LoggerMixin):
         for thread in self._threads:
             thread.join()
         self.logger.info(f"{self._identity} - Threads joined!")
-
-
-def main() -> int:
-    app = ElasticApp()
-    app.start()
-    try:
-        for i in range(60):
-            time.sleep(1)
-    except KeyboardInterrupt:
-        pass
-    app.stop()
-
-    return 0
-
-
-if __name__ == "__main__":
-    main()
