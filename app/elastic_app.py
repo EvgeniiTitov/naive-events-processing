@@ -33,6 +33,8 @@ Issues:
 """
 
 # DUMMY EXAMPLE - probably very inefficient
+# TODO: Currently messages in the queue from Puller to Distributor get lost if
+#       app is stopped
 
 import time
 import multiprocessing
@@ -103,6 +105,10 @@ class MessagePuller(threading.Thread, LoggerMixin):
     Distributor
     """
 
+    SLEEP_MAX = 100
+    SLEEP_MIN = 10
+    DELTA = 10
+
     def __init__(
         self,
         queue_in: queue.Queue,
@@ -115,8 +121,12 @@ class MessagePuller(threading.Thread, LoggerMixin):
         self._queue_in = queue_in
         self._job_queue_out = job_queue_out
         self._message_puller = message_puller
+
+        self._sleep_time = 10
+
         self._pid = get_pid_number()
-        self.logger.info(f"PID: {self._pid} - MessagePuller inited")
+        self._identity = f"PID: {self._pid} - MessagePuller"
+        self.logger.info(f"{self._identity} inited")
 
     def run(self) -> None:
         job_counter = 0
@@ -128,6 +138,20 @@ class MessagePuller(threading.Thread, LoggerMixin):
             else:
                 if "STOP" in task:
                     break
+                elif (
+                    "INCREASE_LOAD" in task
+                    and self._sleep_time + self.DELTA <= self.SLEEP_MAX
+                ):
+                    self._sleep_time += self.DELTA
+                    self.logger.info(f"{self._identity} - load increased")
+                elif (
+                    "DECREASE_LOAD" in task
+                    and self._sleep_time - self.DELTA >= self.SLEEP_MIN
+                ):
+                    self._sleep_time -= self.DELTA
+                    self.logger.info(f"{self._identity} - load decreased")
+                else:
+                    self.logger.info(f"{self._identity} - got unknown task :(")
 
             # TODO: Proper message_puller implementation
             # Fake message creation - in reality it use the message_puller
@@ -140,7 +164,9 @@ class MessagePuller(threading.Thread, LoggerMixin):
             except Exception:
                 pass
 
-        self.logger.info(f"PID: {self._pid} - MessagePuller stopped")
+            time.sleep(self._sleep_time / 100)
+
+        self.logger.info(f"{self._identity} stopped")
 
 
 class JobDistributor(threading.Thread, LoggerMixin):
@@ -432,3 +458,9 @@ class ElasticApp(LoggerMixin):
         for thread in self._threads:
             thread.join()
         self.logger.info(f"{self._identity} - Threads joined!")
+
+    def increase_load(self) -> None:
+        self._puller_status_queue.put("INCREASE_LOAD")
+
+    def decrease_load(self) -> None:
+        self._puller_status_queue.put("DECREASE_LOAD")
