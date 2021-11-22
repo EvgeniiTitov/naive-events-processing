@@ -2,24 +2,25 @@
 Naive elastic app
 
 Instead of just having multiple app instances running all the time (not very
-efficient if the load is not so high), create a system that spawns (creates) new
-instances of the app when the load is high and kills running apps when the load
-is low.
+efficient if the load is not so high), create a system that spawns (creates)
+new instances of the app (workers) when the load is high and kills running
+apps when the load is low.
 
-New object Puller - pull as many messages from PubSub as quickly as possible and
-puts them in a big ass job queue (potentially multiple instances of the puller
-populating the same job queue)
+New object Puller - pulls as many messages from PubSub as quickly as possible
+and puts them in a big ass job queue (potentially multiple instances of the
+puller populating the same job queue)
 
-New object Distributor - gets the job queue and then round robins tasks across N
-workers.
-    - It starts with N workers (put them in different processes) connected to the
-    Distributor via pipes.
-    - It starts sending messages from the job queue to each worker following the
-    Round Robin approach
-    - It monitors worker pipes, if they are full (.put_no_wait() raises an Exception),
-    then the Distributor spawns a new worker and adds it to the pull of currently
-    running workers. If pipes are empty (periodically check their sizes), then put a
-    kill message to one of the workers and then join it, so the process dies
+New object Distributor - gets the job queue and then round robins tasks across
+N workers.
+    - It starts with N workers (put them in different processes) connected to
+    the Distributor via queues.
+    - It starts sending messages from the job queue to each worker following
+    the Round Robin approach
+    - It monitors worker queues, if they are full (.put_no_wait() raises an
+    Exception), then the Distributor spawns a new worker and adds it to the
+    pull of currently running workers. If queues are empty (periodically check
+    their sizes), then put a kill message to one of the workers and then
+    join it, so the process dies
 
 No mutexes used, each worker gets a dedicated Queue, no sharing of resources
 
@@ -35,6 +36,7 @@ Issues:
 # DUMMY EXAMPLE - probably very inefficient
 # TODO: Currently messages in the queue from Puller to Distributor get lost if
 #       app is stopped
+# TODO: Oscillations up down
 
 import time
 import multiprocessing
@@ -69,6 +71,7 @@ class Worker(multiprocessing.Process, LoggerMixin):
         self._message_processor = message_processor
         self._result_publisher = result_publisher
         self._pid = None
+        self._iam = f"PID: {self._pid} - Worker"
 
     @property
     def job_queue(self) -> multiprocessing.Queue:
@@ -80,7 +83,8 @@ class Worker(multiprocessing.Process, LoggerMixin):
 
     def run(self) -> None:
         self._pid = get_pid_number()  # Child process PID
-        self.logger.info(f"PID: {self._pid} - Worker started")
+        self.logger.info(f"{self._iam} - started")
+        queue_capacity = self._job_queue._maxsize
         while True:
             task: t.Any = self._job_queue.get()
             if "STOP" in task:
@@ -90,11 +94,11 @@ class Worker(multiprocessing.Process, LoggerMixin):
             # Long lasting task processing using the passed objects:
             # message processor and result publisher
             time.sleep(2)
-            print(
-                f"PID: {self._pid} - processed task {task}; "
-                f"My queue size: {self.job_queue.qsize()}"
+            self.logger.info(
+                f"{self._iam} - processed task {task}; "
+                f"My queue size: {self.job_queue.qsize()}/{queue_capacity}"
             )
-        self.logger.info(f"PID: {self._pid} - Worker stopped")
+        self.logger.info(f"{self._iam} - stopped")
 
 
 class MessagePuller(threading.Thread, LoggerMixin):
@@ -122,11 +126,11 @@ class MessagePuller(threading.Thread, LoggerMixin):
         self._job_queue_out = job_queue_out
         self._message_puller = message_puller
 
-        self._sleep_time = 10
+        self._sleep_time = 50
 
         self._pid = get_pid_number()
-        self._identity = f"PID: {self._pid} - MessagePuller"
-        self.logger.info(f"{self._identity} inited")
+        self._iam = f"PID: {self._pid} - MessagePuller"
+        self.logger.info(f"{self._iam} inited")
 
     def run(self) -> None:
         job_counter = 0
@@ -138,20 +142,20 @@ class MessagePuller(threading.Thread, LoggerMixin):
             else:
                 if "STOP" in task:
                     break
-                elif (
-                    "INCREASE_LOAD" in task
-                    and self._sleep_time + self.DELTA <= self.SLEEP_MAX
-                ):
-                    self._sleep_time += self.DELTA
-                    self.logger.info(f"{self._identity} - load increased")
-                elif (
-                    "DECREASE_LOAD" in task
-                    and self._sleep_time - self.DELTA >= self.SLEEP_MIN
-                ):
-                    self._sleep_time -= self.DELTA
-                    self.logger.info(f"{self._identity} - load decreased")
+                elif "DECREASE_LOAD" in task:
+                    if self._sleep_time + self.DELTA <= self.SLEEP_MAX:
+                        self._sleep_time += self.DELTA
+                        self.logger.info(f"{self._iam} - load decreased")
+                    else:
+                        self.logger.info(f"{self._iam} - min load reached")
+                elif "INCREASE_LOAD" in task:
+                    if self._sleep_time - self.DELTA >= self.SLEEP_MIN:
+                        self._sleep_time -= self.DELTA
+                        self.logger.info(f"{self._iam} - load increased")
+                    else:
+                        self.logger.info(f"{self._iam} - max load reached")
                 else:
-                    self.logger.info(f"{self._identity} - got unknown task :(")
+                    self.logger.info(f"{self._iam} - got unknown task :(")
 
             # TODO: Proper message_puller implementation
             # Fake message creation - in reality it use the message_puller
@@ -166,7 +170,7 @@ class MessagePuller(threading.Thread, LoggerMixin):
 
             time.sleep(self._sleep_time / 100)
 
-        self.logger.info(f"{self._identity} stopped")
+        self.logger.info(f"{self._iam} stopped")
 
 
 class JobDistributor(threading.Thread, LoggerMixin):
@@ -201,8 +205,8 @@ class JobDistributor(threading.Thread, LoggerMixin):
         self._stopping_workers: t.List[Worker] = []
 
         self._pid = get_pid_number()
-        self._identity = f"PID: {self._pid} - JobDistributor"
-        self.logger.info(f"{self._identity} inited")
+        self._iam = f"PID: {self._pid} - JobDistributor"
+        self.logger.info(f"{self._iam} - inited")
 
     def run(self) -> None:
         """
@@ -210,7 +214,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         """
         self._crete_min_number_of_workers()
         self.logger.info(
-            f"{self._identity} started {self._min_n_workers} workers"
+            f"{self._iam} - started {self._min_n_workers} workers"
         )
         while True:
             # Check if its time to stop the distributor
@@ -227,7 +231,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
             # Receive a batch of jobs and distribute across the running workers
             self._distribute_jobs_batch_across_workers()
 
-        self.logger.info(f"{self._identity} stopped")
+        self.logger.info(f"{self._iam} - stopped")
 
     def _manage_workers(self) -> None:
         direction = self._determine_scaling_direction()
@@ -237,7 +241,11 @@ class JobDistributor(threading.Thread, LoggerMixin):
             self._append_new_worker_to_running_pool()
         elif direction == "DOWN" and n_running_workers > self._min_n_workers:
             self._remove_worker_from_running_pool()
-
+        else:
+            self.logger.info(
+                f"{self._iam} - Currently running workers: "
+                f"{len(self._running_workers)}"
+            )
         if len(self._stopping_workers):
             self._try_joining_stopping_workers_within_timeout()
 
@@ -246,7 +254,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
         jobs_batch = self._accumulage_jobs_batch()
         if not len(jobs_batch):
             self.logger.info(
-                f"{self._identity} failed to accumulate a batch of jobs, "
+                f"{self._iam} - failed to accumulate a batch of jobs, "
                 f"the job queue is empty"
             )
             return
@@ -264,7 +272,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
                     continue
                 else:
                     break
-        self.logger.info(f"{self._identity} - a batch of jobs distributed")
+        self.logger.info(f"{self._iam} - a batch of jobs distributed")
 
     def _get_next_worker_round_robin(self) -> t.Iterator[Worker]:
         while True:
@@ -288,22 +296,19 @@ class JobDistributor(threading.Thread, LoggerMixin):
         """
         # TODO: How to quickly find a worker with the fewest jobs in its queue?
         worker_to_stop = self._running_workers.pop(
-            random.randint(0, len(self._running_workers))
+            random.randrange(0, len(self._running_workers))
         )
         worker_to_stop.job_queue.put("STOP")
         self._stopping_workers.append(worker_to_stop)
         self.logger.info(
-            f"{self._identity} scaling down started, signalled worker to stop"
+            f"{self._iam} - scaling down started, signalled worker to stop"
         )
 
     def _append_new_worker_to_running_pool(self) -> None:
         worker = self._create_new_worker()
         worker.start()
         self._running_workers.append(worker)
-        self.logger.info(
-            f"{self._identity} scaled up, added new worker. Currently running "
-            f"workers: {len(self._running_workers)}"
-        )
+        self.logger.info(f"{self._iam} - scaled up, added new worker")
 
     def _check_if_time_to_stop(self) -> bool:
         try:
@@ -315,7 +320,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
                 return True
             else:
                 self.logger.warning(
-                    f"{self._identity} got unknown command {task}, ignored"
+                    f"{self._iam} - got unknown command {task}, ignored"
                 )
                 return False
 
@@ -325,7 +330,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
             joined = self._join_worker_within_timeout(worker)
             if joined:
                 self.logger.info(
-                    f"{self._identity} scaled down, worker killed"
+                    f"{self._iam} - scaling down complete, worker killed"
                 )
             else:
                 failed_to_join_within_timeout.append(worker)
@@ -358,25 +363,12 @@ class JobDistributor(threading.Thread, LoggerMixin):
         """
         # TODO: Double check your scaling logic based on slots makes sense
         #       IT DOESNT! Spikes up down up down
-        '''
-        Exception in thread Thread-2:
-        Traceback (most recent call last):
-          File "/home/etitov1_woolworths_com_au/.pyenv/versions/3.6.5/lib/python3.6/threading.py", line 916, in _bootstrap_inner
-            self.run()
-          File "/home/etitov1_woolworths_com_au/coding/naive-events-processor/app/elastic_app.py", line 225, in run
-            self._manage_workers()
-          File "/home/etitov1_woolworths_com_au/coding/naive-events-processor/app/elastic_app.py", line 239, in _manage_workers
-            self._remove_worker_from_running_pool()
-          File "/home/etitov1_woolworths_com_au/coding/naive-events-processor/app/elastic_app.py", line 287, in _remove_worker_from_running_pool
-            random.randint(0, len(self._running_workers))
-        IndexError: pop index out of range
-        '''
         currently_available_queue_slots = 0
         for worker in self._running_workers:
             jobs_in_queue, queue_size = worker.my_capacity
             currently_available_queue_slots += queue_size - jobs_in_queue
         self.logger.debug(
-            f"{self._identity} - available qeueue slots:"
+            f"{self._iam} - available qeueue slots:"
             f" {currently_available_queue_slots}"
         )
         if currently_available_queue_slots <= self._job_batch_size:
@@ -388,11 +380,11 @@ class JobDistributor(threading.Thread, LoggerMixin):
 
     def _stop_all_workers(self) -> None:
         self._signal_running_workers_to_stop()
-        self.logger.info(f"{self._identity} signalled running workers to stop")
+        self.logger.info(f"{self._iam} - signalled running workers to stop")
         self._join_stopping_workers()
-        self.logger.info(f"{self._identity} joined the workers")
+        self.logger.info(f"{self._iam} - joined the workers")
         if len(self._running_workers) or len(self._stopping_workers):
-            raise Exception(f"{self._identity} failed to stop all workers!")
+            raise Exception(f"{self._iam} failed to stop all workers!")
 
     def _signal_running_workers_to_stop(self) -> None:
         while self._running_workers:

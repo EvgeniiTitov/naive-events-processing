@@ -1,4 +1,5 @@
-import cv2
+import time
+import keyboard
 
 from app import ElasticApp
 
@@ -8,13 +9,14 @@ def main() -> int:
     app.start()
 
     while True:
-        pressed_key = cv2.waitKey(33)
-        if pressed_key == 27:
+        pressed_key = keyboard.read_key()
+        if pressed_key == "q":
             break
-        elif pressed_key == ord("u"):
+        elif pressed_key == "u":
             app.increase_load()
-        elif pressed_key == ord("d"):
+        elif pressed_key == "d":
             app.decrease_load()
+        time.sleep(0.2)
 
     app.stop()
     return 0
