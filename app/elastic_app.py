@@ -267,6 +267,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
 
     def _append_new_worker_to_running_pool(self) -> None:
         worker = self._create_new_worker()
+        worker.start()
         self._running_workers.append(worker)
         self.logger.info(
             f"{self._identity} scaled up, added new worker. Currently running "
@@ -372,7 +373,6 @@ class JobDistributor(threading.Thread, LoggerMixin):
             message_processor="fake message processor",
             result_publisher="fake result publisher",
         )
-        worker.start()
         return worker
 
 
