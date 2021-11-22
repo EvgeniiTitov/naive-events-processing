@@ -372,6 +372,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
             message_processor="fake message processor",
             result_publisher="fake result publisher",
         )
+        worker.start()
         return worker
 
 
