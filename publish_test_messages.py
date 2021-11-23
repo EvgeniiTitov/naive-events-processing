@@ -20,7 +20,7 @@ def main():
     )
     print("Initialized")
 
-    for i in range(1000):
+    for i in range(100):
         message = {"crn": i, "features": samples[i % len(samples)]}
         message_encoded = str(message).encode("utf-8")
         future = publisher.publish(topic_path, message_encoded)

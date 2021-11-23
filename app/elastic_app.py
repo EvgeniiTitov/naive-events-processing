@@ -36,6 +36,7 @@ Issues:
 # DUMMY EXAMPLE - probably very inefficient
 # TODO: Currently messages in the queue from Puller to Distributor get lost if
 #       app is stopped
+# TODO: Cant pass user defined objects to the worker
 
 import time
 import multiprocessing
@@ -45,12 +46,10 @@ import queue
 import random
 
 from app.helpers import LoggerMixin, get_pid_number
-from .abstractions import (
-    AbsMessageConsumer,
-    AbsMessageProcessor,
-    AbsResultPiblisher,
-    message,
-)
+from .abstractions import AbsMessageConsumer, message
+from app.message_consumer import PubSubMessageConsumer
+from app.message_processor import IrisClassifier
+from app.result_publisher import BigQueryMessagePublisher
 
 
 Batch = t.List[t.Optional[message]]
@@ -66,15 +65,13 @@ class Worker(multiprocessing.Process, LoggerMixin):
     def __init__(
         self,
         job_queue: multiprocessing.Queue,
-        message_processor: AbsMessageProcessor,
-        result_publisher: AbsResultPiblisher,
         *args,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._job_queue = job_queue
-        self._message_processor = message_processor
-        self._result_publisher = result_publisher
+        self._message_processor = None
+        self._result_publisher = None
         self._pid = None
         self._iam = f"PID: {self._pid} - Worker"
 
@@ -90,11 +87,19 @@ class Worker(multiprocessing.Process, LoggerMixin):
         self._pid = get_pid_number()  # Child process PID
         self.logger.info(f"{self._iam} - started")
         queue_capacity = self._job_queue._maxsize
+
+        self._message_processor = IrisClassifier()
+        self._result_publisher = BigQueryMessagePublisher()
+
         while True:
             task: t.Any = self._job_queue.get()
             if "STOP" in task:
                 break
             self._process_message(task)
+
+            # TODO: Delete me
+            time.sleep(2)
+
             self.logger.info(
                 f"{self._iam} - processed task {task}; "
                 f"My queue size: {self.job_queue.qsize()}/{queue_capacity}"
@@ -431,21 +436,17 @@ class JobDistributor(threading.Thread, LoggerMixin):
 
     def _create_new_worker(self) -> Worker:
         worker_job_queue = multiprocessing.Queue(self._worker_queue_size)
-        worker = Worker(
-            job_queue=worker_job_queue,
-            message_processor="fake message processor",
-            result_publisher="fake result publisher",
-        )
+        worker = Worker(job_queue=worker_job_queue)
         return worker
 
 
 class ElasticApp(LoggerMixin):
 
-    NUMBER_OF_WORKERS = 2
-    MAX_NUMBER_OF_WORKERS = 32
+    NUMBER_OF_WORKERS = 1
+    MAX_NUMBER_OF_WORKERS = 8
     JOB_QUEUE_SIZE = 100
-    WORKER_QUEUE_SIZE = 10
-    JOB_BATCH_SIZE = 10
+    WORKER_QUEUE_SIZE = 5
+    JOB_BATCH_SIZE = 5
 
     def __init__(self):
         self._pid = get_pid_number()
@@ -458,10 +459,11 @@ class ElasticApp(LoggerMixin):
 
         self._threads = []
 
+        self._pubsub = PubSubMessageConsumer()
         self._message_puller_thread = MessagePuller(
             queue_in=self._puller_status_queue,
             job_queue_out=self._job_queue,
-            message_puller="FakeUserDefinedMessagePuller",
+            message_puller=self._pubsub,
         )
         self._threads.append(self._message_puller_thread)
 
