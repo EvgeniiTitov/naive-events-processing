@@ -46,9 +46,15 @@ import queue
 import random
 
 from app.helpers import LoggerMixin, get_pid_number
+from .abstractions import (
+    AbsMessageConsumer,
+    AbsMessageProcessor,
+    AbsResultPiblisher,
+    message,
+)
 
 
-fake_userdefined_object = t.Any
+Batch = t.List[t.Optional[message]]
 
 
 class Worker(multiprocessing.Process, LoggerMixin):
@@ -103,21 +109,16 @@ class Worker(multiprocessing.Process, LoggerMixin):
 
 class MessagePuller(threading.Thread, LoggerMixin):
     """
-    Fake message generator running in a thread in the main process whose main
-    task is to pull messages (create fake ones) to get processed by the worker.
-    The MessagePuller places messages into the queue_out connected to the
-    Distributor
+    MessagePuller object running in a thread in the main process whose main
+    task is it receive messages from the MessageConsumer provided and put them
+    in the job queue connected to the JobDistributor
     """
-
-    SLEEP_MAX = 100
-    SLEEP_MIN = 10
-    DELTA = 10
 
     def __init__(
         self,
         queue_in: queue.Queue,
         job_queue_out: queue.Queue,
-        message_puller: fake_userdefined_object,
+        message_puller: AbsMessageConsumer,
         *args,
         **kwargs,
     ) -> None:
@@ -126,51 +127,55 @@ class MessagePuller(threading.Thread, LoggerMixin):
         self._job_queue_out = job_queue_out
         self._message_puller = message_puller
 
-        self._sleep_time = 50
+        self._batch_being_distributed: Batch = []
+        self._message_being_sent = None
 
         self._pid = get_pid_number()
         self._iam = f"PID: {self._pid} - MessagePuller"
         self.logger.info(f"{self._iam} inited")
 
     def run(self) -> None:
-        job_counter = 0
         while True:
-            try:
-                task = self._queue_in.get_nowait()
-            except queue.Empty:
-                pass
-            else:
-                if "STOP" in task:
-                    break
-                elif "DECREASE_LOAD" in task:
-                    if self._sleep_time + self.DELTA <= self.SLEEP_MAX:
-                        self._sleep_time += self.DELTA
-                        self.logger.info(f"{self._iam} - load decreased")
-                    else:
-                        self.logger.info(f"{self._iam} - min load reached")
-                elif "INCREASE_LOAD" in task:
-                    if self._sleep_time - self.DELTA >= self.SLEEP_MIN:
-                        self._sleep_time -= self.DELTA
-                        self.logger.info(f"{self._iam} - load increased")
-                    else:
-                        self.logger.info(f"{self._iam} - max load reached")
+            stop = self._check_if_time_to_stop()
+            if stop:
+                break  # It is assumed we just ignore pulled messages if any
+            if not len(self._batch_being_distributed):
+                batch = self._get_new_batch_of_messages()
+                if len(batch):
+                    self._batch_being_distributed = batch
                 else:
-                    self.logger.info(f"{self._iam} - got unknown task :(")
-
-            # TODO: Proper message_puller implementation
-            # Fake message creation - in reality it use the message_puller
-            # object passed by the user, which extracts messages from somewhere
-            # say a PubSub topic
-            new_job = f"Task: {job_counter}"
-            job_counter += 1
+                    continue
+            if not self._message_being_sent:
+                self._message_being_sent = self._batch_being_distributed.pop()
             try:
-                self._job_queue_out.put(new_job, timeout=1.0)
+                self._job_queue_out.put(self._message_being_sent, timeout=0.3)
             except Exception:
                 pass
-
-            time.sleep(self._sleep_time / 200)
-
+            else:
+                self._message_being_sent = None
         self.logger.info(f"{self._iam} stopped")
+
+    def _check_if_time_to_stop(self) -> bool:
+        try:
+            task = self._queue_in.get_nowait()
+        except queue.Empty:
+            return False
+        else:
+            if "STOP" in task:
+                return True
+            else:
+                self.logger.info(f"{self._iam} - got unknown task")
+                return False
+
+    def _get_new_batch_of_messages(self) -> Batch:
+        try:
+            messages: Batch = self._message_puller.get_messages()
+        except Exception as e:
+            self.logger.exception(
+                f"{self._iam} - failed while pulling messages. Error: {e}"
+            )
+            raise e
+        return messages
 
 
 class JobDistributor(threading.Thread, LoggerMixin):
