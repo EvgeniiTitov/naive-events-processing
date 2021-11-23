@@ -262,8 +262,6 @@ class JobDistributor(threading.Thread, LoggerMixin):
         # Distribute the jobs across the running workers (Round Robin)
         while jobs_batch:
             job = jobs_batch.pop()
-            # TODO: Consider shuffling workers before distributing the tasks,
-            #       it appears the first ones might be potentially busier?
             for worker in self._get_next_worker_round_robin():
                 # If worker queue is full, try the next worker
                 try:
@@ -275,6 +273,12 @@ class JobDistributor(threading.Thread, LoggerMixin):
         self.logger.info(f"{self._iam} - a batch of jobs distributed")
 
     def _get_next_worker_round_robin(self) -> t.Iterator[Worker]:
+        """
+        Returns a worker following the Round Robin approach.
+        Shuffles the workers at the beginning to ensure the first ones do not
+        get busier than the ones closer to the end of the list
+        """
+        random.shuffle(self._running_workers)
         while True:
             for worker in self._running_workers:
                 yield worker
@@ -290,19 +294,21 @@ class JobDistributor(threading.Thread, LoggerMixin):
         return batch
 
     def _remove_worker_from_running_pool(self) -> None:
-        """
-        IT IS ASSUMED for simplicity sake to remove a random worker, not the
-        one with the least tasks in the queue
-        """
-        # TODO: How to quickly find a worker with the fewest jobs in its queue?
         worker_to_stop = self._running_workers.pop(
-            random.randrange(0, len(self._running_workers))
+            self._get_index_of_least_busy_worker()
         )
         worker_to_stop.job_queue.put("STOP")
         self._stopping_workers.append(worker_to_stop)
         self.logger.info(
             f"{self._iam} - scaling down started, signalled worker to stop"
         )
+
+    def _get_index_of_least_busy_worker(self) -> int:
+        index_load = [
+            (i, self._running_workers[i].my_capacity[0])
+            for i in range(len(self._running_workers))
+        ]
+        return min(index_load, key=lambda pair: pair[-1])[0]
 
     def _append_new_worker_to_running_pool(self) -> None:
         worker = self._create_new_worker()
