@@ -1,5 +1,5 @@
 """
-Naive elastic app
+POC - Naive elastic app
 
 Instead of just having multiple app instances running all the time (not very
 efficient if the load is not so high), create a system that spawns (creates)
@@ -93,7 +93,7 @@ class Worker(multiprocessing.Process, LoggerMixin):
             # TODO: Proper task processor and result publisher implementation
             # Long lasting task processing using the passed objects:
             # message processor and result publisher
-            time.sleep(2)
+            time.sleep(3)
             self.logger.info(
                 f"{self._iam} - processed task {task}; "
                 f"My queue size: {self.job_queue.qsize()}/{queue_capacity}"
@@ -168,7 +168,7 @@ class MessagePuller(threading.Thread, LoggerMixin):
             except Exception:
                 pass
 
-            time.sleep(self._sleep_time / 100)
+            time.sleep(self._sleep_time / 200)
 
         self.logger.info(f"{self._iam} stopped")
 
@@ -422,7 +422,7 @@ class JobDistributor(threading.Thread, LoggerMixin):
 class ElasticApp(LoggerMixin):
 
     NUMBER_OF_WORKERS = 2
-    MAX_NUMBER_OF_WORKERS = 8
+    MAX_NUMBER_OF_WORKERS = 32
     JOB_QUEUE_SIZE = 100
     WORKER_QUEUE_SIZE = 10
     JOB_BATCH_SIZE = 10
