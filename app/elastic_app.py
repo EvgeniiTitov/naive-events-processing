@@ -36,7 +36,6 @@ Issues:
 # DUMMY EXAMPLE - probably very inefficient
 # TODO: Currently messages in the queue from Puller to Distributor get lost if
 #       app is stopped
-# TODO: Oscillations up down
 
 import time
 import multiprocessing
@@ -59,16 +58,16 @@ Batch = t.List[t.Optional[message]]
 
 class Worker(multiprocessing.Process, LoggerMixin):
     """
-    Fake worker running in a separate process connected by the pipe to the
-    Distributor sitting in the main process. The worker gets jobs to process
-    through the pipe.
+    The Worker object running in a separate process that receives jobs
+    (messages) from the JobDistributor via a queue. The Worker uses the user
+    provided objects MessageProcessor and ResultPublisher to process the task
     """
 
     def __init__(
         self,
         job_queue: multiprocessing.Queue,
-        message_processor: fake_userdefined_object,
-        result_publisher: fake_userdefined_object,
+        message_processor: AbsMessageProcessor,
+        result_publisher: AbsResultPiblisher,
         *args,
         **kwargs,
     ) -> None:
@@ -95,16 +94,32 @@ class Worker(multiprocessing.Process, LoggerMixin):
             task: t.Any = self._job_queue.get()
             if "STOP" in task:
                 break
-
-            # TODO: Proper task processor and result publisher implementation
-            # Long lasting task processing using the passed objects:
-            # message processor and result publisher
-            time.sleep(3)
+            self._process_message(task)
             self.logger.info(
                 f"{self._iam} - processed task {task}; "
                 f"My queue size: {self.job_queue.qsize()}/{queue_capacity}"
             )
         self.logger.info(f"{self._iam} - stopped")
+
+    def _process_message(self, message: message) -> None:
+        try:
+            result = self._message_processor.process_messages([message])
+        except Exception as e:
+            self.logger.exception(
+                f"{self._iam} - {self._message_processor.__class__.__name__} "
+                f"failed while processing message {message}. Error: {e}"
+            )
+            raise e
+        if not result:
+            return
+        try:
+            self._result_publisher.publish_result(result)
+        except Exception as e:
+            self.logger.exception(
+                f"{self._iam} - {self._result_publisher.__class__.__name__} "
+                f"failed while publishing results {result}. Error: {e}"
+            )
+            raise e
 
 
 class MessagePuller(threading.Thread, LoggerMixin):
